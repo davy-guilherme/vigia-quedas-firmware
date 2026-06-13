@@ -264,9 +264,45 @@ void app_main(void) {
     fall_state_t state = STATE_MONITORING;
     gpio_set_level(LED, 0);
 
+    int64_t last_heartbeat = 0;
+
     while (1) {
 
         gpio_set_level(LED, (!wifi_connected || !mqtt_connected));
+
+        if (
+            mqtt_connected &&
+            esp_timer_get_time() - last_heartbeat > 30000000
+        ) {
+            last_heartbeat = esp_timer_get_time();
+
+            char payload[256];
+
+            time_t timestamp;
+            time(&timestamp);
+
+            snprintf(
+                payload,
+                sizeof(payload),
+                "{"
+                    "\"event\":\"heartbeat\","
+                    "\"device_id\":\"esp32-001\","
+                    "\"timestamp\":%lld"
+                "}",
+                (long long)timestamp
+            );
+
+            esp_mqtt_client_publish(
+                mqtt_client,
+                "vigiaquedas/device/esp32-001/heartbeat",
+                payload,
+                0,
+                1,
+                0
+            );
+
+            ESP_LOGI(TAG, "Heartbeat enviado");
+        }
 
         // 1. Leitura rápida
         bmi160_read_accel(&bmi_config, &ax_raw, &ay_raw, &az_raw);
