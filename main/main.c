@@ -36,6 +36,9 @@ static const char *TAG = "Vigia";
 #define ACC_SENS 16384.0    // 1g no modo ±2g
 #define GYRO_SENS 131.0     // 1°/s no modo ±250°/s
 
+static bool wifi_connected = false;
+static bool mqtt_connected = false;
+
 typedef enum {
     STATE_MONITORING,
     STATE_FREE_FALL,
@@ -66,6 +69,7 @@ static void mqtt_event_handler (
     esp_mqtt_event_handle_t event = event_data;
     switch ((esp_mqtt_event_id_t)event_id) {
         case MQTT_EVENT_CONNECTED:
+            mqtt_connected = true;
             ESP_LOGI(TAG, "MQTT conectado");
             printf("MQTT conectado - printf");
             esp_mqtt_client_publish(
@@ -77,6 +81,16 @@ static void mqtt_event_handler (
                 0
             );
 
+            break;
+        
+        case MQTT_EVENT_DISCONNECTED:
+            mqtt_connected = false;
+            ESP_LOGW(TAG, "MQTT DESCONECTADO");
+            break;
+
+        case MQTT_EVENT_ERROR:
+            mqtt_connected = false; 
+            ESP_LOGE(TAG, "MQTT ERROR");
             break;
 
         // outros eventos mqtt
@@ -122,7 +136,9 @@ static void wifi_event_handler(
 
     if (event_base == WIFI_EVENT &&
         event_id == WIFI_EVENT_STA_DISCONNECTED)
-    {
+    {   
+        wifi_connected = false;
+        mqtt_connected = false;
         wifi_event_sta_disconnected_t *event = (wifi_event_sta_disconnected_t *) event_data;
         ESP_LOGW(
             TAG,
@@ -137,6 +153,7 @@ static void wifi_event_handler(
     if (event_base == IP_EVENT &&
         event_id == IP_EVENT_STA_GOT_IP)
     {
+        wifi_connected = true;
         ESP_LOGI(TAG, "Conectado no Wi-Fi");
         printf("Conectado no wi-fi\n");
 
@@ -249,6 +266,8 @@ void app_main(void) {
 
     while (1) {
 
+        gpio_set_level(LED, (!wifi_connected || !mqtt_connected));
+
         // 1. Leitura rápida
         bmi160_read_accel(&bmi_config, &ax_raw, &ay_raw, &az_raw);
         // bmi160_read_gyro(&bmi_config, &gx_raw, &gy_raw, &gz_raw);
@@ -323,7 +342,7 @@ void app_main(void) {
                     bool led_state = false;
                     bool false_alarm = false;
 
-                    while ((esp_timer_get_time() - start_time) < 5000000) { // 5 segundos
+                    while ((esp_timer_get_time() - start_time) < 5000000 && false_alarm == false) { // 5 segundos
                         // Verifica se o botão foi pressionado
                         if (gpio_get_level(BTN) == 0) { // botão ligado ao GND
                             printf("Botão pressionado!\n");
@@ -363,7 +382,8 @@ void app_main(void) {
                         // eviar mensagem mqtt
                         esp_mqtt_client_publish(
                             mqtt_client,
-                            "fall-detection/esp32-001/alert",
+                            "vigiaquedas/device/esp32-001/fall",
+                            // "fall/esp32-001/alert",
                             payload,
                             0,
                             1,
