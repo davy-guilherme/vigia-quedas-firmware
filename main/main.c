@@ -265,10 +265,30 @@ void app_main(void) {
     gpio_set_level(LED, 0);
 
     int64_t last_heartbeat = 0;
+    int64_t last_led_blink = 0;
 
     while (1) {
 
-        gpio_set_level(LED, (!wifi_connected || !mqtt_connected));
+        // gpio_set_level(LED, (!wifi_connected || !mqtt_connected));
+        // --- LÓGICA DO LED INDICADOR ---
+        int64_t current_time = esp_timer_get_time();
+
+        if (!wifi_connected || !mqtt_connected) {
+            // Se perder o Wi-Fi ou MQTT, o LED fica aceso direto (comportamento original)
+            gpio_set_level(LED, 1);
+        } else {
+            // Se estiver tudo OK (conectado):
+            // 10000000 microssegundos = 10 segundos. 
+            int64_t time_since_blink = current_time - last_led_blink;
+
+            if (time_since_blink > 10000000) {
+                last_led_blink = current_time; // Reseta o cronômetro do LED
+                gpio_set_level(LED, 1);         // Liga o LED para iniciar a piscada
+            } else if (time_since_blink > 100000) {
+                gpio_set_level(LED, 0);         // Desliga após 100ms
+            }
+        }
+        // --------------------------------
 
         if (
             mqtt_connected &&
